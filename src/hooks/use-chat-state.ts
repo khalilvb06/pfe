@@ -50,15 +50,21 @@ export function useChatState() {
 
         if (error) throw error;
 
-        const formattedConvs: Conversation[] = (data || []).map((chat) => ({
-          id: chat.id,
-          title: chat.conversation.title,
-          messages: chat.conversation.messages.map((m: any) => ({
-            ...m,
-            timestamp: new Date(m.timestamp),
-          })),
-          createdAt: new Date(chat.created_at),
-        }));
+        const formattedConvs: Conversation[] = (data || []).map((chat) => {
+          // Guard against null or malformed conversation data
+          const conversationData = chat.conversation || { title: "محادثة", messages: [] };
+          const messages = Array.isArray(conversationData.messages) ? conversationData.messages : [];
+          
+          return {
+            id: chat.id,
+            title: conversationData.title || "محادثة",
+            messages: messages.map((m: any) => ({
+              ...m,
+              timestamp: m.timestamp ? new Date(m.timestamp) : new Date(),
+            })),
+            createdAt: chat.created_at ? new Date(chat.created_at) : new Date(),
+          };
+        });
 
         setConversations(formattedConvs);
       } catch (error) {
@@ -74,7 +80,7 @@ export function useChatState() {
 
   const activeConversation = conversations.find((c) => c.id === activeConversationId) || null;
 
-  const createConversation = async () => {
+  const createConversation = useCallback(async () => {
     if (!profile) return null;
 
     const tempId = crypto.randomUUID();
@@ -115,38 +121,56 @@ export function useChatState() {
       toast.error("فشل في إنشاء محادثة جديدة");
     }
     return null;
-  };
+  }, [profile]);
 
-  const updateConversationInDB = async (conv: Conversation) => {
+  const updateConversationInDB = useCallback(async (conv: Conversation) => {
     if (!profile) return;
 
     try {
+      // Ensure all Date objects are strings for JSON storage
+      const serializedMessages = conv.messages.map(m => ({
+        ...m,
+        timestamp: m.timestamp instanceof Date ? m.timestamp.toISOString() : m.timestamp
+      }));
+
       const { error } = await supabase
         .from("chats")
         .update({
           conversation: {
             title: conv.title,
-            messages: conv.messages,
+            messages: serializedMessages,
           },
           updated_at: new Date().toISOString(),
         })
         .eq("id", conv.id);
 
-      if (error) throw error;
+      if (error) {
+        console.error("Supabase update error:", error);
+        throw error;
+      }
     } catch (error) {
-      console.error("Error updating chat:", error);
+      console.error("Error updating chat in DB:", error);
     }
-  };
+  }, [profile]);
 
   const sendMessage = useCallback(async (content: string) => {
     if (!profile) return;
 
-    let convId = activeConversationId;
-    let currentConv = conversations.find(c => c.id === convId);
+    let targetConvId = activeConversationId;
+    let targetConv = conversations.find((c) => c.id === targetConvId);
 
-    if (!convId || !currentConv) {
-      convId = await createConversation();
-      if (!convId) return;
+    // If no active conversation or it doesn't exist in state, create one
+    if (!targetConvId || !targetConv) {
+      targetConvId = await createConversation();
+      if (!targetConvId) return;
+      
+      // Initialize targetConv for the new conversation
+      targetConv = {
+        id: targetConvId,
+        title: "محادثة جديدة",
+        messages: [],
+        createdAt: new Date(),
+      };
     }
 
     const userMsg: Message = {
@@ -156,24 +180,22 @@ export function useChatState() {
       timestamp: new Date(),
     };
 
-    let updatedConv: Conversation | null = null;
+    // Calculate updated conversation for user message
+    const updatedWithUser: Conversation = {
+      ...targetConv,
+      messages: [...targetConv.messages, userMsg],
+    };
 
-    setConversations((prev) =>
-      prev.map((c) => {
-        if (c.id !== convId) return c;
-        const updated = { ...c, messages: [...c.messages, userMsg] };
-        if (c.messages.length === 0) {
-          updated.title = content.slice(0, 40) + (content.length > 40 ? "..." : "");
-        }
-        updatedConv = updated;
-        return updated;
-      })
-    );
-
-    // Save user message to DB immediately
-    if (updatedConv) {
-      await updateConversationInDB(updatedConv);
+    // Update title if it's the first message
+    if (targetConv.messages.length === 0) {
+      updatedWithUser.title = content.slice(0, 40) + (content.length > 40 ? "..." : "");
     }
+
+    // Update state and DB for user message
+    setConversations((prev) =>
+      prev.map((c) => (c.id === targetConvId ? updatedWithUser : c))
+    );
+    await updateConversationInDB(updatedWithUser);
 
     // Get bot response from RAG
     setIsTyping(true);
@@ -188,23 +210,19 @@ export function useChatState() {
         sources: ragResponse.sources,
       };
 
-      let finalUpdatedConv: Conversation | null = null;
-      setConversations((prev) =>
-        prev.map((c) => {
-          if (c.id === convId) {
-            const updated = { ...c, messages: [...c.messages, botMsg] };
-            finalUpdatedConv = updated;
-            return updated;
-          }
-          return c;
-        })
-      );
+      // Calculate updated conversation for bot response
+      const updatedWithBot: Conversation = {
+        ...updatedWithUser,
+        messages: [...updatedWithUser.messages, botMsg],
+      };
 
-      // Save bot response to DB
-      if (finalUpdatedConv) {
-        await updateConversationInDB(finalUpdatedConv);
-      }
+      // Update state and DB for bot message
+      setConversations((prev) =>
+        prev.map((c) => (c.id === targetConvId ? updatedWithBot : c))
+      );
+      await updateConversationInDB(updatedWithBot);
     } catch (error) {
+      console.error("Error in sendMessage:", error);
       const errorMsg: Message = {
         id: crypto.randomUUID(),
         role: "bot",
@@ -213,15 +231,15 @@ export function useChatState() {
       };
       setConversations((prev) =>
         prev.map((c) =>
-          c.id === convId ? { ...c, messages: [...c.messages, errorMsg] } : c
+          c.id === targetConvId ? { ...c, messages: [...c.messages, errorMsg] } : c
         )
       );
     } finally {
       setIsTyping(false);
     }
-  }, [activeConversationId, conversations, profile]);
+  }, [activeConversationId, conversations, profile, createConversation, updateConversationInDB]);
 
-  const deleteConversation = async (id: string) => {
+  const deleteConversation = useCallback(async (id: string) => {
     try {
       const { error } = await supabase
         .from("chats")
@@ -239,7 +257,7 @@ export function useChatState() {
       console.error("Error deleting chat:", error);
       toast.error("فشل في حذف المحادثة");
     }
-  };
+  }, [activeConversationId]);
 
   return {
     conversations,
