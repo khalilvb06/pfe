@@ -1,7 +1,7 @@
 // ==================== CONFIGURATION ====================
 const MISTRAL_KEY = import.meta.env.VITE_MISTRAL_API_KEY;
 const QDRANT_KEY = import.meta.env.VITE_QDRANT_API_KEY;
-const QDRANT_URL = '/api/qdrant';
+const QDRANT_URL = import.meta.env.VITE_QDRANT_ENDPOINT || '/api/qdrant';
 
 const COLLECTION_NAME = "Code Civil Algerien";
 const EMBEDDING_MODEL = "mistral-embed";
