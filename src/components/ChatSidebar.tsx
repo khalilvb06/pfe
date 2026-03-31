@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { MessageSquarePlus, Settings, Info, Trash2, MessageCircle, PanelRightClose, PanelRightOpen } from "lucide-react";
+import { MessageSquarePlus, Info, Trash2, MessageCircle, PanelRightClose, PanelRightOpen } from "lucide-react";
+import { Link } from "react-router-dom";
 import type { Conversation } from "@/hooks/use-chat-state";
 
 interface ChatSidebarProps {
@@ -52,7 +53,7 @@ export function ChatSidebar({
         <div className="flex items-center justify-between p-4 border-b border-sidebar-border">
           {!collapsed && (
             <div className="flex items-center gap-2">
-              <span className="text-2xl">⚖️</span>
+              <img src="/logo.png" alt="القسطاس" className="w-8 h-8 object-contain" />
               <h1 className="text-lg font-bold text-gold">القسطاس</h1>
             </div>
           )}
@@ -112,14 +113,10 @@ export function ChatSidebar({
         {/* Footer */}
         {!collapsed && (
           <div className="p-3 border-t border-sidebar-border space-y-1">
-            <button className="w-full flex items-center gap-2 p-2.5 rounded-lg hover:bg-sidebar-hover transition-colors text-sm">
-              <Settings className="w-4 h-4" />
-              <span>الإعدادات</span>
-            </button>
-            <button className="w-full flex items-center gap-2 p-2.5 rounded-lg hover:bg-sidebar-hover transition-colors text-sm">
+            <Link to="/about" className="w-full flex items-center gap-2 p-2.5 rounded-lg hover:bg-sidebar-hover transition-colors text-sm">
               <Info className="w-4 h-4" />
               <span>حول التطبيق</span>
-            </button>
+            </Link>
           </div>
         )}
       </aside>
