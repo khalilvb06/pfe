@@ -1,0 +1,12 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/qdrant/:path*",
+      "destination": "https://6aa25697-b7f9-4908-8bb1-ca2d4eaee2d9.europe-west3-0.gcp.cloud.qdrant.io:6333/:path*"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}
